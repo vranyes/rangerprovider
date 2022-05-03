@@ -11,78 +11,105 @@ func resourcePolicy() *schema.Resource {
 	return &schema.Resource{
 		Create: resourcePolicyCreate,
 		Read:   resourcePolicyRead,
+		Update: resourcePolicyUpdate,
 		Delete: resourcePolicyDelete,
 
 		Schema: map[string]*schema.Schema{
 			"description": {
-				Type: schema.TypeString,
+				Type:     schema.TypeString,
+				Default:  "Created by Terraform!",
+				Optional: true,
 			},
 			"name": {
-				Type: schema.TypeString,
+				Type:     schema.TypeString,
+				Required: true,
 			},
 			"id": {
 				Type:     schema.TypeString,
-				Required: false,
-				Optional: false,
+				Computed: true,
 			},
 			"enabled": {
-				Type:    schema.TypeBool,
-				Default: true,
+				Type:     schema.TypeBool,
+				Default:  true,
+				Optional: true,
 			},
 			"labels": {
-				Type: schema.TypeList,
+				Type:     schema.TypeList,
+				Optional: true,
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
 			},
-			"policies": {
-				Type: schema.TypeList,
-				Elem: map[string]*schema.Schema{
-					"accesses": {
-						Type: schema.TypeList,
-						Elem: &schema.Schema{
-							Type: schema.TypeMap,
+			"policy": {
+				Type:     schema.TypeSet,
+				Required: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"accesses": {
+							Type:     schema.TypeList,
+							Required: true,
+							Elem: &schema.Schema{
+								Type: schema.TypeString,
+							},
+						},
+						"users": {
+							Type:     schema.TypeList,
+							Optional: true,
+							Elem: &schema.Schema{
+								Type: schema.TypeString,
+							},
+						},
+						"groups": {
+							Type:     schema.TypeList,
+							Optional: true,
 							Elem: &schema.Schema{
 								Type: schema.TypeString,
 							},
 						},
 					},
-					"users": {
-						Type: schema.TypeList,
-					},
-					"groups": {
-						Type: schema.TypeList,
-					},
 				},
 			},
 			"policy_type": {
-				Type: schema.TypeInt,
+				Type:     schema.TypeInt,
+				Default:  0,
+				Optional: true,
 			},
-			"resources": {
-				Type: schema.TypeMap,
-				Elem: &schema.Schema{
-					Type: schema.TypeMap,
-					Elem: map[string]*schema.Schema{
+			"resource": {
+				Type:     schema.TypeSet,
+				Required: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"key": {
+							Type:     schema.TypeString,
+							Required: true,
+						},
 						"values": {
-							Type: schema.TypeList,
+							Type:     schema.TypeList,
+							Required: true,
 							Elem: &schema.Schema{
 								Type: schema.TypeString,
 							},
 						},
 						"recursive": {
-							Type: schema.TypeBool,
+							Type:     schema.TypeBool,
+							Optional: true,
+							Default:  false,
 						},
 						"excludes": {
-							Type: schema.TypeBool,
+							Type:     schema.TypeBool,
+							Optional: true,
+							Default:  false,
 						},
 					},
 				},
 			},
 			"service": {
-				Type: schema.TypeString,
+				Type:     schema.TypeString,
+				Required: true,
 			},
 			"service_type": {
-				Type: schema.TypeString,
+				Type:     schema.TypeString,
+				Required: true,
 			},
 		},
 		Importer: &schema.ResourceImporter{
@@ -93,8 +120,9 @@ func resourcePolicy() *schema.Resource {
 
 func policyResourceExpander(input map[string]interface{}) map[string]policy.PolicyResource {
 	var prExpanded map[string]policy.PolicyResource
-	for k, v := range input {
+	for _, v := range input {
 		remapped := v.(map[string]interface{})
+		k := remapped["key"].(string)
 		prExpanded[k] = policy.PolicyResource{
 			IsExcludes:  remapped["excludes"].(bool),
 			IsRecursive: remapped["recursive"].(bool),
@@ -110,10 +138,9 @@ func accessExpandeder(input []interface{}) []policy.PolicyItemAccess {
 
 	// each v is a PolicyItemAccess
 	for _, v := range input {
-		remapped := v.(map[string]interface{})
 		pia = append(pia, policy.PolicyItemAccess{
-			Type:      remapped["type"].(string),
-			IsAllowed: remapped["allowed"].(bool),
+			Type:      v.(string),
+			IsAllowed: true,
 		})
 	}
 
@@ -143,7 +170,7 @@ func resourcePolicyCreate(d *schema.ResourceData, m interface{}) error {
 
 	p := policy.Policy{}
 
-	p.Resources = policyResourceExpander(d.Get("resources").(map[string]interface{}))
+	p.Resources = policyResourceExpander(d.Get("resource").(map[string]interface{}))
 	p.PolicyItems = policyPolicyExpander(d.Get("policies").([]interface{}))
 	p.PolicyLabels = d.Get("labels").([]string)
 	p.Description = d.Get("description").(string)
@@ -168,6 +195,15 @@ func resourcePolicyCreate(d *schema.ResourceData, m interface{}) error {
 	return resourcePolicyRead(d, m)
 }
 
+func resourcePolicyUpdate(d *schema.ResourceData, m interface{}) error {
+	client := m.(*policy.PolicyClient)
+	policy := policy.Policy{}
+
+	client.UpdatePolicy(policy)
+
+	return resourcePolicyRead(d, m)
+}
+
 func resourcePolicyRead(d *schema.ResourceData, m interface{}) error {
 	var err error
 	client := m.(*policy.PolicyClient)
@@ -184,7 +220,7 @@ func resourcePolicyRead(d *schema.ResourceData, m interface{}) error {
 		return err
 	}
 
-	d.Set("resources", p.Resources)
+	d.Set("resource", p.Resources)
 	d.Set("policies", p.PolicyItems)
 	d.Set("labels", p.PolicyLabels)
 	d.Set("description", p.Description)

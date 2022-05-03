@@ -34,9 +34,9 @@ func Provider() *schema.Provider {
 				DefaultFunc: schema.EnvDefaultFunc("RANGER_SSL", true),
 			},
 		},
-		// ResourcesMap: map[string]*schema.Resource{
-		// 	"ranger_policy": resourcePolicy(),
-		// },
+		ResourcesMap: map[string]*schema.Resource{
+			"ranger_policy": resourcePolicy(),
+		},
 		DataSourcesMap: map[string]*schema.Resource{
 			"ranger_policy": dataSourcePolicy(),
 		},
@@ -48,10 +48,18 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 	host := d.Get("host").(string)
 	username := d.Get("username").(string)
 	password := d.Get("password").(string)
+	skip_ssl_verify, ok := d.Get("skip_ssl_verify").(bool)
+	if !ok {
+		if d.Get("skip_ssl_verify").(string) == "true" {
+			skip_ssl_verify = true
+		} else {
+			skip_ssl_verify = false
+		}
+	}
 
 	// Warning or errors can be collected in a slice type
 	var diags diag.Diagnostics
 
-	c := policy.NewPolicyClient(host, username, password, true)
+	c := policy.NewPolicyClient(host, username, password, skip_ssl_verify)
 	return &c, diags
 }
